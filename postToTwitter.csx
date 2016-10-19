@@ -1,4 +1,6 @@
-#r "Newtonsoft.Json"
+// incorporates lightweight twitter library from https://gist.github.com/sdesalas/c82b92200816ecc83af1
+ 
+ #r "Newtonsoft.Json"
 
 using System;
 using System.IO;
