@@ -1,6 +1,4 @@
-// incorporates lightweight twitter library from https://gist.github.com/sdesalas/c82b92200816ecc83af1
- 
- #r "Newtonsoft.Json"
+#r "Newtonsoft.Json"
 
 using System;
 using System.IO;
@@ -11,6 +9,7 @@ using System.Security.Cryptography;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Net;
+using System.Net.Http.Formatting;
 using System.Web;
 using System.Text;
 using Newtonsoft.Json;
@@ -37,27 +36,20 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
     // see if we got a result back
     if (postResult != null)
             {
-                // create something to hold the results
-                StringBuilder result = new StringBuilder();
-
-                foreach (var J in postResult)
-                {
-                    foreach (var item in J)
-                    {
-                        // take each key:value pair and put in to a string
-                        result.Append(String.Format("{0} : {1}<br/>", item.Key, item.Value));
-
-                    }
-                    
-
-                }
                 // note - response may contain an error... but as far as this function app is concerned, that's ok
-                return req.CreateResponse(HttpStatusCode.OK, "response:" + result);
+                string jsonString = JsonConvert.SerializeObject(postResult);
+                
+                // create a new response object - using req.CreateResponse was formatting the content
+                var resp = new HttpResponseMessage(HttpStatusCode.OK);
+                resp.Content = new StringContent(jsonString, System.Text.Encoding.UTF8, "application/json");
+                return resp;
+
             }
             else
             {
                 // result object is empty.
-                return req.CreateResponse(HttpStatusCode.InternalServerError, "no result returned from api.Post");
+                log.Info($"Error: No result returned from api.post");
+                return req.CreateResponse(HttpStatusCode.InternalServerError, "{\"error\":\"no result returned from api.Post\"}");
             }
 
     
