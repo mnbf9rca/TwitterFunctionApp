@@ -24,12 +24,26 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
     // parse the content to a JObject
     JObject parsedContent = JObject.Parse(jsonContent);
 
-    API api = new API(
-        parsedContent["oauth_token"].ToString(), //AccessToken
-        parsedContent["oauth_token_secret"].ToString(), //AccessTokenSecret
-        parsedContent["oauth_consumer_key"].ToString(), // ConsumerKey
-        parsedContent["oauth_consumer_secret"].ToString() //ConsumerSecret
-        );
+    // retrieve all of the mandatory properties from the input JSON
+    try
+    {
+        API api = new API(
+            parsedContent["oauth_token"].ToString(), //AccessToken
+            parsedContent["oauth_token_secret"].ToString(), //AccessTokenSecret
+            parsedContent["oauth_consumer_key"].ToString(), // ConsumerKey
+            parsedContent["oauth_consumer_secret"].ToString() //ConsumerSecret
+            );
+    }
+    catch (Exception e)
+    {
+        var resp = new HttpResponseMessage(HttpStatusCode.BadRequest);
+        resp.Content = new StringContent(String.format("{'message':'{0}','Source':'{1}','Data':'{2}'}",
+                                                        e.Message,
+                                                        e.Source,
+                                                        e.Data,
+                                                        ), System.Text.Encoding.UTF8, "application/json");
+        return resp;
+    }
    
    // make the request
    List<JSONObject> postResult = api.Post("statuses/update.json", new Parameters {{"status",parsedContent["tweet"].ToString()}});
@@ -50,6 +64,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             {
                 // result object is empty.
                 log.Info($"Error: No result returned from api.post");
+                var resp = new HttpResponseMessage(HttpStatusCode.);
                 return req.CreateResponse(HttpStatusCode.InternalServerError, "{\"error\":\"no result returned from api.Post\"}");
             }
 
