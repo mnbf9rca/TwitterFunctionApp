@@ -20,14 +20,25 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
 {
  string jsonContent = await req.Content.ReadAsStringAsync();
     log.Info($"jsonContent={jsonContent}");
-
+    
     // parse the content to a JObject
-    JObject parsedContent = JObject.Parse(jsonContent);
-
+    
+    JObject parsedContent = new JObject();
+    
+    try
+    {
+        parsedContent = JObject.Parse(jsonContent);
+    }
+    catch (Exception e)
+    {
+        return manageException(e, log);
+    }
+        
+    API api = new API();
     // retrieve all of the mandatory properties from the input JSON
     try
     {
-        API api = new API(
+        api = new API(
             parsedContent["oauth_token"].ToString(), //AccessToken
             parsedContent["oauth_token_secret"].ToString(), //AccessTokenSecret
             parsedContent["oauth_consumer_key"].ToString(), // ConsumerKey
@@ -36,13 +47,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
     }
     catch (Exception e)
     {
-        var resp = new HttpResponseMessage(HttpStatusCode.BadRequest);
-        resp.Content = new StringContent(String.format("{'message':'{0}','Source':'{1}','Data':'{2}'}",
-                                                        e.Message,
-                                                        e.Source,
-                                                        e.Data,
-                                                        ), System.Text.Encoding.UTF8, "application/json");
-        return resp;
+        return manageException(e, log);
     }
    
    // make the request
@@ -51,11 +56,63 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
     // see if we got a result back
     if (postResult != null)
             {
+                // create a new response object - using req.CreateResponse was formatting the content
+                var resp = new HttpResponseMessage();
+                
                 // note - response may contain an error... but as far as this function app is concerned, that's ok
                 string jsonString = JsonConvert.SerializeObject(postResult);
                 
-                // create a new response object - using req.CreateResponse was formatting the content
-                var resp = new HttpResponseMessage(HttpStatusCode.OK);
+                           
+                
+                // first, check to see if there's an error in the response. if it's 187 then that's ok, otherwise return it.
+                
+                foreach (JSONObject result in postResult)
+                {
+                    
+                    if (result.ContainsKey("errors"))
+                    {
+                    // errors in return
+                        
+                        foreach (var error in result)
+                        {
+                            // convert to JArray
+                            JArray jsonVal = new JArray(error.Value) as JArray;
+                            // create dynamic object
+                            dynamic errorVal = jsonVal;
+                            
+                            foreach (dynamic errorValItem in errorVal)
+                            {
+                            
+                                if (errorValItem[0]["code"] == 187)
+                                {
+                                    // is duplicate
+                                    resp.StatusCode = HttpStatusCode.OK;
+                                }
+                                else
+                                {
+                                    resp.StatusCode = HttpStatusCode.InternalServerError;
+                                }
+
+                            }
+                            
+
+                            
+                        }
+                        
+                        
+                    }
+                    else
+                    {
+                        // no errors
+                        resp.StatusCode = HttpStatusCode.OK;
+                    }
+                }
+                
+                
+                log.Info(jsonString);
+                
+                
+                // var resp = new HttpResponseMessage(HttpStatusCode.OK);
                 resp.Content = new StringContent(jsonString, System.Text.Encoding.UTF8, "application/json");
                 return resp;
 
@@ -64,13 +121,42 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             {
                 // result object is empty.
                 log.Info($"Error: No result returned from api.post");
-                var resp = new HttpResponseMessage(HttpStatusCode.);
+                var resp = new HttpResponseMessage(HttpStatusCode.InternalServerError);
                 return req.CreateResponse(HttpStatusCode.InternalServerError, "{\"error\":\"no result returned from api.Post\"}");
             }
 
     
 }
 
+public static HttpResponseMessage manageException(Exception e, TraceWriter log)
+{
+        // log it to functions log
+        log.Error(JsonConvert.SerializeObject(e));                 
+
+        // construct the error
+        errorToReturn newError = new errorToReturn
+        {
+            Message = e.Message,
+            HResult = e.HResult,
+            CreatedDate = DateTime.UtcNow
+        };
+
+        // serialize so we can return it with the web request
+        string errorMessage =  JsonConvert.SerializeObject(newError);
+        
+        // construct teh HttpResponseMessage and return it
+        var resp = new HttpResponseMessage(HttpStatusCode.BadRequest);
+        resp.Content = new StringContent(errorMessage, System.Text.Encoding.UTF8, "application/json");
+        return resp;
+    
+}
+
+public class errorToReturn
+{
+      public string Message { get; set; }
+      public int HResult { get; set; }
+      public DateTime CreatedDate { get; set; }
+}
 
     /// <summary>
     /// Entry point API for Twitter requests
