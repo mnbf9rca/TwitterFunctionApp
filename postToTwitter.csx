@@ -59,11 +59,6 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                 // create a new response object - using req.CreateResponse was formatting the content
                 var resp = new HttpResponseMessage();
                 
-                // note - response may contain an error... but as far as this function app is concerned, that's ok
-                string jsonString = JsonConvert.SerializeObject(postResult);
-                
-                           
-                
                 // first, check to see if there's an error in the response. if it's 187 then that's ok, otherwise return it.
                 
                 foreach (JSONObject result in postResult)
@@ -72,47 +67,55 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
                     if (result.ContainsKey("errors"))
                     {
                     // errors in return
+                        // set status code to error response
+                        // we'll override this later if we find at least 1 "duplicate" error code
+                        resp.StatusCode = HttpStatusCode.InternalServerError;
                         
+                        // look at each error object in teh "errors" array
                         foreach (var error in result)
                         {
-                            // convert to JArray
+                            // convert to JArray so we can parse the contents
                             JArray jsonVal = new JArray(error.Value) as JArray;
-                            // create dynamic object
+                            
+                            // create dynamic object containing it
                             dynamic errorVal = jsonVal;
                             
+                            // parse each entry - should onyl be 1 but for some reason it's an array...
                             foreach (dynamic errorValItem in errorVal)
                             {
-                            
-                                if (errorValItem[0]["code"] == 187)
+                            // check if we got a duplicate post error
+                            // code from https://dev.twitter.com/overview/api/response-codes
+                            // 187	Status is a duplicate	The status text has been Tweeted already by the authenticated account.
+                            if (errorValItem[0]["code"] == 187) // "duplicate post"
                                 {
-                                    // is duplicate
+                                    // is duplicate, which is OK by us - so set status to "ok"
                                     resp.StatusCode = HttpStatusCode.OK;
-                                }
-                                else
-                                {
-                                    resp.StatusCode = HttpStatusCode.InternalServerError;
                                 }
 
                             }
-                            
-
-                            
                         }
-                        
-                        
                     }
                     else
                     {
-                        // no errors
+                        // no errors returned
                         resp.StatusCode = HttpStatusCode.OK;
                     }
                 }
                 
-                
-                log.Info(jsonString);
-                
-                
-                // var resp = new HttpResponseMessage(HttpStatusCode.OK);
+                // serialize the result so we can return it verbatim to the caller
+                string jsonString = JsonConvert.SerializeObject(postResult);
+
+                // if we got an error, log it as an error, otherwise just log as is.
+                if (resp.StatusCode == HttpStatusCode.OK)
+                {
+                    log.Info("OK JSON from api.post: " + jsonString);
+                }
+                else
+                {
+                    log.Error("ERROR JSON from api.post: " + jsonString);
+                }
+
+                // return the response data
                 resp.Content = new StringContent(jsonString, System.Text.Encoding.UTF8, "application/json");
                 return resp;
 
@@ -120,7 +123,7 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
             else
             {
                 // result object is empty.
-                log.Info($"Error: No result returned from api.post");
+                log.Error($"Error: No result returned from api.post");
                 var resp = new HttpResponseMessage(HttpStatusCode.InternalServerError);
                 return req.CreateResponse(HttpStatusCode.InternalServerError, "{\"error\":\"no result returned from api.Post\"}");
             }
@@ -128,6 +131,9 @@ public static async Task<HttpResponseMessage> Run(HttpRequestMessage req, TraceW
     
 }
 
+/// <summary>
+/// log an error, then return a response to the user which explains an error
+/// </summary>
 public static HttpResponseMessage manageException(Exception e, TraceWriter log)
 {
         // log it to functions log
@@ -151,6 +157,10 @@ public static HttpResponseMessage manageException(Exception e, TraceWriter log)
     
 }
 
+
+/// <summary>
+/// to construct an error response
+/// </summary>
 public class errorToReturn
 {
       public string Message { get; set; }
